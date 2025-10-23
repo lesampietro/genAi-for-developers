@@ -1,0 +1,41 @@
+# How to obtain an API key from and AI provider?
+
+## Steps to obtain a Google AI Studio key
+
+## Prerequisite
+	Sign in with your Google account and select or create the Google Cloud project that will own the key. Enable billing if required by the APIs you plan to call.
+
+## Step 01
+	Access the AI provider of your choice's webpage. In our case, access Google's AI Studio page: https://aistudio.google.com/apikey
+
+## Step 02
+	Click on "Create API key".
+
+## Step 03
+	Give the new key a name and attach a related project to it.
+
+## Step 04
+	On the dashboard, the information regarding the newly created key will appear. Click on the key information to see it.
+
+## Step 05
+	Finally, copy the API key's code.
+
+_______________________________________________
+
+# Which LLMs are supported by Google AI Studio?
+	The supported LLMs by Google AI Studio with the free-tier key are primarily from the Gemini family.
+
+	The available models and their limits can vary over time, but current documentation and sources generally mention the following models as being accessible for experimentation and prototyping in the Gemini API's free tier (which is used in Google AI Studio), subject to rate limits:
+
+	Gemini 2.5 Flash: A model with a good balance of speed and reasoning, ideal for most tasks. Rate limit: 125,000 tokens per minute
+
+	Gemini 2.5 Pro: The most advanced model for complex reasoning. Rate limit: 250,000 tokens per minute
+
+	Gemini 2.5 Flash-Lite: A lightweight variant optimized for high throughput. Rate limit: 250,000 tokens per minute
+
+	Gemini 2.0 Flash: An older variant that may be listed. Rate limit: 1,000,000 tokens per minute
+
+_______________________________________________
+
+# Google AI Studio API documentation:
+	https://ai.google.dev/gemini-api/docs

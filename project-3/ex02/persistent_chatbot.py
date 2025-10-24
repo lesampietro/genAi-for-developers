@@ -1,35 +1,45 @@
+from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-import string
-import os
-import json
-from collections import deque
 from datetime import datetime
+from collections import deque
+import string
+import json
+import os
+
+class History(BaseModel):
+	user: str | None = None
+	assistant: str | None = None
+	summary: str | None = None
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DB_PATH = "./chat_history.json"
-SYSTEM_PROMPT = "You are a helpful assistant that responds in Portuguese. Your answers are always concise and take no more than 50 words."
+DB_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
+SYSTEM_PROMPT = "You are a helpful assistant that responds in Portuguese. Your tone of voice is friendly, engaging and informative. Your answers should be concise and take no more than 50 words. No need to use emojis!"
 TIMESTAMP = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def load_db(path=DB_PATH):
+	"""Loads the database from a JSON file."""
 	if os.path.exists(path):
 		with open(path, "r", encoding="utf-8") as f:
 			return json.load(f)
 	return {"interactions": [], "summaries": []}
 
 def save_db(db, path=DB_PATH):
+	"""Saves the database to a JSON file."""
 	with open(path, "w", encoding="utf-8") as f:
 		json.dump(db, f, ensure_ascii=False, indent=2)
 
 
 def build_prompt(short_memory: list, long_memory: list, user_input: str) -> str:
+	"""Builds the prompt including system prompt, long-term and short-term memory, and user input."""
 	prompt = TIMESTAMP + "\n" + SYSTEM_PROMPT + "\n"
 	if long_memory:
-		prompt += "Long-term memory:\n"
+		prompt += "Long-term memory (summaries):\n"
 		for item in long_memory:
-			prompt += f"- {item}\n"
+			s = item.get("summary") if isinstance(item, dict) else str(item)
+			prompt += f"- {s}\n"
 		prompt += "\n"
 	if short_memory:
 		prompt += "Recent interactions:\n"
@@ -39,27 +49,29 @@ def build_prompt(short_memory: list, long_memory: list, user_input: str) -> str:
 	prompt += f"User: {user_input}\nAssistant:"
 	return prompt
 
-def print_summary(interaction_count: int) -> None:
-		# Build summary prompt
-		summary_prompt = "Summarize the following interactions in Portuguese, focusing on key points. Keep it under 50 words.\n\n"
-		for it in list(short_window):
-			summary_prompt += f"User: {it['user']}\nAssistant: {it['assistant']}\n"
-		# Get summary from the model
-		summary_response = client.models.generate_content(
-			model="gemini-2.5-flash",
-			contents=summary_prompt,
-		   	config=types.GenerateContentConfig(temperature=0.0)
-		)
-		summary_text = summary_response.text.strip()
-		print(f"\n[Summary Generated]: {summary_text}\n")
-		# Update long-term memory and database
-		long_window.append(summary_text)
-		db["summaries"].append(summary_text)
+def generate_summary(client, db, long_window):
+	"""Generates a summary of the conversation every last 10 interactions and updates the database and long-term memory."""
+	last_10 = db.get("interactions", [])[-10:]
+	if not last_10:
+		return None
+	summary_prompt = (
+		"Sum in Portuguese and concisely the main themes of the following conversation exchanges between user and assistant: " + "\n".join(f"User: {it['user']}\nAssistant: {it['assistant']}" for it in last_10)
+		+ "\nSummary:"
+	)
+	response = client.models.generate_content(
+		model="gemini-2.5-flash",
+		contents=summary_prompt,
+		config=types.GenerateContentConfig(temperature=0.0)
+	)
+	record = History(summary=response.text).model_dump()
+	db.setdefault("summaries", []).append(record)
+	long_window.append(record)
+	return response.text
 
 def persistent_chatbot() -> None:
 	"""Initializes a chatbot with persistent memory, returning a summary every last 10 interactions."""
 	client = genai.Client(api_key=GEMINI_API_KEY)
-	db = load_db()
+	db = load_db() # loads my database based on the path passed on the DB_PATH variable (set on load_db function)
 	short_window = deque(maxlen=5) #maximum of 5 interactions stored
 	long_window = deque(maxlen=10) #maximum of 10 interactions stored
 
@@ -67,8 +79,6 @@ def persistent_chatbot() -> None:
 		short_window.append(it)
 	for s in db.get("summaries", [])[-10:]:
 		long_window.append(s)
-
-	interaction_since_last_summary = 0
 
 	# Start chat loop
 	while True:
@@ -101,26 +111,23 @@ def persistent_chatbot() -> None:
 		   		config=types.GenerateContentConfig(temperature=0.0)
 			)
 		except Exception as e:
-			print(f"ERROR. {type(e).__name__} - 429 RESOURCE_EXHAUSTED.\n")
+			print(f"ERROR. {type(e).__name__} - 429 RESOURCE_EXHAUSTED.\nA: Try again later.")
 			break
 		print(f'A: {response.text}')
 
 		# Append the current interaction to short-term memory and database
-		interaction = {"user": user_input, "assistant": response.text}
-		db["interactions"].append(interaction)
+		interaction = History(user=user_input, assistant=response.text).model_dump()
+		db.setdefault("interactions", []).append(interaction)
 		short_window.append(interaction)
-		
-		# interaction_since_last_summary += 1
-		interaction_since_last_summary = len(db.get("interactions", [])) % 10
-		# Every 10 interactions, generate a summary and update long-term memory
-		if interaction_since_last_summary >= 10:
-			print_summary()
-		
-		
-		save_db(db)
-	
-	save_db(db)
 
+		# Quando o total de interações for múltiplo de 10, gera resumo das últimas 10
+		if len(db["interactions"]) % 10 == 0:
+			summary_text = generate_summary(client, db, long_window)
+			if summary_text:
+				print(f"\n_ _ _\nHello! This is the Summary of last 10 interactions:\n {summary_text}\n_ _ _\n")
+		save_db(db)
+
+	save_db(db)
 
 
 if __name__ == "__main__":
